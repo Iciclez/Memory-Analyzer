@@ -2,10 +2,11 @@
 #include "dllmain.hpp"
 #include "memory_analyzer.hpp"
 
-#include <thread>
-#include <iostream>
+#pragma comment(linker,"\"/manifestdependency:type='win32' \
+name='Microsoft.Windows.Common-Controls' version='6.0.0.0' \
+processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 
-
+logger l("memory_analyzer.log", "memory_analyzer");
 
 dllmain::dllmain()
 {
@@ -15,7 +16,7 @@ dllmain::~dllmain() noexcept
 {
 }
 
-void dllmain::on_attach()
+void dllmain::on_attach(HINSTANCE instance)
 {
 	AllocConsole();
 
@@ -41,7 +42,7 @@ BOOL WINAPI DllMain(_In_ HINSTANCE hinstDLL, _In_ DWORD fdwReason, _In_ LPVOID l
 	{
 	case DLL_PROCESS_ATTACH:
 		DisableThreadLibraryCalls(hinstDLL);
-		dllmain::on_attach();
+		dllmain::on_attach(hinstDLL);
 		break;
 
 	case DLL_PROCESS_DETACH:

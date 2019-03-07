@@ -1,24 +1,26 @@
 #include "zephyrus.hpp"
 #include "assembler.hpp"
 #include "disassembler.hpp"
-#include "detours.h"
 
+#include <windows.h>
 #include <sstream>
 #include <iomanip>
 #include <random>
 #include <chrono>
 #include <algorithm>
 
+#include "detours.h"
+
 #pragma comment (lib, "detours.lib")
 
 zephyrus z;
 
 zephyrus::zephyrus(padding_byte padding)
+	: padding(padding)
 {
-	this->padding = padding;
 	this->pageexecutereadwrite = [&](address_t address, size_t size, const std::function<void(void)> &function)
 	{
-		dword protect = 0;
+		DWORD protect = 0;
 
 		if (!this->pagereadwriteaccess(address))
 		{
@@ -35,37 +37,32 @@ zephyrus::zephyrus(padding_byte padding)
 		return true;
 	};
 
-	[]()
+	HANDLE process = GetCurrentProcess();
+	HANDLE token = 0;
+	if (OpenProcessToken(process, TOKEN_ADJUST_PRIVILEGES, &token))
 	{
-		handle process = GetCurrentProcess();
-		handle token = 0;
-		if (OpenProcessToken(process, TOKEN_ADJUST_PRIVILEGES, &token))
-		{
-			CloseHandle(token);
-			CloseHandle(process);
-			return false;
-		}
-
-		LUID luid = { 0 };
-		if (!LookupPrivilegeValueA(0, "SeDebugPrivilege", &luid))
-		{
-			CloseHandle(token);
-			CloseHandle(process);
-			return false;
-		}
-
-		TOKEN_PRIVILEGES privileges = { 0 };
-		privileges.PrivilegeCount = 1;
-		privileges.Privileges[0].Luid = luid;
-		privileges.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
-
-		AdjustTokenPrivileges(token, false, &privileges, 0, 0, 0);
-
 		CloseHandle(token);
 		CloseHandle(process);
+		return;
+	}
 
-		return true;
-	}();
+	LUID luid = { 0 };
+	if (!LookupPrivilegeValueA(0, "SeDebugPrivilege", &luid))
+	{
+		CloseHandle(token);
+		CloseHandle(process);
+		return;
+	}
+
+	TOKEN_PRIVILEGES privileges = { 0 };
+	privileges.PrivilegeCount = 1;
+	privileges.Privileges[0].Luid = luid;
+	privileges.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+
+	AdjustTokenPrivileges(token, false, &privileges, 0, 0, 0);
+
+	CloseHandle(token);
+	CloseHandle(process);
 }
 
 zephyrus::~zephyrus() noexcept
@@ -94,15 +91,15 @@ bool zephyrus::pagereadwriteaccess(address_t address)
 	return true;
 }
 
-dword zephyrus::protectvirtualmemory(address_t address, size_t size)
+uint32_t zephyrus::protectvirtualmemory(address_t address, size_t size)
 {
-	dword protection = 0;
+	DWORD protection = 0;
 	return VirtualProtect(reinterpret_cast<void*>(address), size, PAGE_EXECUTE_READWRITE, &protection) ? protection : 0;
 }
 
-const std::vector<byte> zephyrus::readmemory(address_t address, size_t size)
+const std::vector<uint8_t> zephyrus::readmemory(address_t address, size_t size)
 {
-	std::vector<byte> memory;
+	std::vector<uint8_t> memory;
 	memory.reserve(size);
 
 	this->pageexecutereadwrite(address, size, [&]()
@@ -113,19 +110,19 @@ const std::vector<byte> zephyrus::readmemory(address_t address, size_t size)
 		}
 	});
 
-
 	return memory;
 }
 
 bool zephyrus::writememory(address_t address, const std::string & array_of_bytes, size_t padding_size, bool retain_bytes)
 {
-	std::vector<byte> data = string_to_bytes(array_of_bytes);
-	data.insert(data.end(), padding_size, static_cast<byte>(padding));
+	std::vector<uint8_t> data = string_to_bytes(array_of_bytes);
+	
+	data.insert(data.end(), padding_size, static_cast<uint8_t>(padding));
 
 	return this->writememory(address, data, retain_bytes);
 }
 
-bool zephyrus::writememory(address_t address, const std::vector<byte>& bytes, bool retain_bytes)
+bool zephyrus::writememory(address_t address, const std::vector<uint8_t>& bytes, bool retain_bytes)
 {
 	return this->pageexecutereadwrite(address, bytes.size(), [&]()
 	{
@@ -142,7 +139,7 @@ bool zephyrus::writememory(address_t address, const std::vector<byte>& bytes, bo
 	});
 }
 
-bool zephyrus::copymemory(address_t address, lpvoid bytes, size_t size, bool retain_bytes)
+bool zephyrus::copymemory(address_t address, void *bytes, size_t size, bool retain_bytes)
 {
 	return this->pageexecutereadwrite(address, size, [&]()
 	{
@@ -158,7 +155,8 @@ bool zephyrus::copymemory(address_t address, lpvoid bytes, size_t size, bool ret
 
 bool zephyrus::writeassembler(address_t address, const std::string & assembler_code, bool retain_bytes)
 {
-	std::vector<byte> bytecodes;
+	std::vector<uint8_t> bytecodes;
+
 	if (!this->assemble(assembler_code, bytecodes))
 	{
 		return false;
@@ -169,8 +167,9 @@ bool zephyrus::writeassembler(address_t address, const std::string & assembler_c
 
 bool zephyrus::writepadding(address_t address, size_t padding_size)
 {
-	std::vector<byte> padding_bytes;
-	padding_bytes.resize(padding_size, static_cast<byte>(padding));
+	std::vector<uint8_t> padding_bytes;
+
+	padding_bytes.resize(padding_size, static_cast<uint8_t>(padding));
 
 	return this->writememory(address, padding_bytes, false);
 }
@@ -204,7 +203,7 @@ bool zephyrus::redirect(hook_operation operation, address_t * address, address_t
 #endif
 
 		//insert trampoline
-		std::vector<byte> trampoline = this->readmemory(*address, size);
+		std::vector<uint8_t> trampoline = this->readmemory(*address, size);
 #ifdef X64
 
 		//additional step in x64 where we will have to take our trampoline bytes ->
@@ -252,7 +251,7 @@ bool zephyrus::redirect(hook_operation operation, address_t * address, address_t
 		}
 	}
 
-	for (std::unordered_map<address_t, std::vector<byte>>::iterator it = this->trampoline_table.begin(); it != this->trampoline_table.end(); ++it)
+	for (std::unordered_map<address_t, std::vector<uint8_t>>::iterator it = this->trampoline_table.begin(); it != this->trampoline_table.end(); ++it)
 	{
 		//std::pair<> of real_address to trampoline bytes
 		if ((*it).first == *address)
@@ -269,7 +268,7 @@ bool zephyrus::redirect(address_t * address, address_t function, bool enable)
 	return this->redirect(JMP, address, function, enable);
 }
 
-bool zephyrus::detour(lpvoid * from, lpvoid to, bool enable)
+bool zephyrus::detour(void ** from, void *to, bool enable)
 {
 	if (DetourTransactionBegin() != NO_ERROR)
 	{
@@ -310,17 +309,17 @@ bool zephyrus::sethook(hook_operation operation, address_t address, address_t fu
 			memoryedit[address] = this->readmemory(address, size);
 		}
 
-		std::vector<byte> bytes;
+		std::vector<uint8_t> bytes;
 
 		if (operation == JMP)
 		{
-			std::vector<byte> x64jmp = { 0xFF, 0x25, 0x00, 0x00, 0x00, 0x00 };
+			std::vector<uint8_t> x64jmp = { 0xFF, 0x25, 0x00, 0x00, 0x00, 0x00 };
 			bytes.insert(bytes.end(), x64jmp.begin(), x64jmp.end());
 	}
 		/*
 		else if (operation == CALL)
 		{
-		std::vector<byte> x64call = { 0xFF, 0x15, 0x02, 0x00, 0x00, 0x00, 0xE8, 0x08 };
+		std::vector<uint8_t> x64call = { 0xFF, 0x15, 0x02, 0x00, 0x00, 0x00, 0xE8, 0x08 };
 		bytes.insert(bytes.end(), x64call.begin(), x64call.end());
 		}
 		*/
@@ -329,10 +328,10 @@ bool zephyrus::sethook(hook_operation operation, address_t address, address_t fu
 			throw std::exception("exception operation not supported");
 		}
 
-		std::vector<byte> pfunction = this->readmemory(reinterpret_cast<address_t>(&function), 8);
+		std::vector<uint8_t> pfunction = this->readmemory(reinterpret_cast<address_t>(&function), 8);
 		bytes.insert(bytes.end(), pfunction.begin(), pfunction.end());
 
-		bytes.insert(bytes.end(), nop_count, static_cast<byte>(padding));
+		bytes.insert(bytes.end(), nop_count, static_cast<uint8_t>(padding));
 
 		this->writememory(address, bytes, false);
 	});
@@ -357,7 +356,8 @@ bool zephyrus::sethook(hook_operation operation, address_t address, address_t fu
 
 bool zephyrus::sethook(hook_operation operation, address_t address, const std::string & assembler_code, size_t nop_count, bool retain_bytes)
 {
-	std::vector<byte> bytecodes;
+	std::vector<uint8_t> bytecodes;
+	
 	if (!this->assemble(assembler_code, bytecodes))
 	{
 		return false;
@@ -371,14 +371,16 @@ bool zephyrus::sethook(hook_operation operation, address_t address, const std::s
 bool zephyrus::sethook(hook_operation operation, address_t address, const std::vector<std::string>& assembler_code, size_t nop_count, bool retain_bytes)
 {
 	std::string assembler = "";
+
 	for (const std::string & instruction : assembler_code)
 	{
 		assembler += instruction + "\n";
 	}
+	
 	return this->sethook(operation, address, assembler, nop_count, retain_bytes);
 }
 
-bool zephyrus::assemble(const std::string & assembler_code, std::vector<byte>& bytecode)
+bool zephyrus::assemble(const std::string & assembler_code, std::vector<uint8_t>& bytecode)
 {
 	return assembler(std::vector<std::string>(), 
 #ifdef X64
@@ -418,63 +420,65 @@ size_t zephyrus::getnopcount(address_t address, hook_operation operation)
 	return static_cast<size_t>(-1);
 }
 
-const std::string zephyrus::byte_to_string(const std::vector<byte>& bytes, const std::string & separator)
+const std::string zephyrus::byte_to_string(const std::vector<uint8_t>& bytes, const std::string & separator)
 {
-	std::stringstream ss;
+	std::stringstream stream;
 	for (size_t n = 0; n < bytes.size(); ++n)
 	{
 		if (!separator.compare("\\x"))
 		{
-			ss << separator << std::uppercase << std::hex << std::setw(2) << std::setfill('0') << static_cast<int32_t>(bytes.at(n));
+			stream << separator << std::uppercase << std::hex << std::setw(2) << std::setfill('0') << static_cast<int32_t>(bytes.at(n));
 		}
 		else
 		{
-			ss << std::uppercase << std::hex << std::setw(2) << std::setfill('0') << static_cast<int32_t>(bytes.at(n));
+			stream << std::uppercase << std::hex << std::setw(2) << std::setfill('0') << static_cast<int32_t>(bytes.at(n));
 
 			if (bytes.size() - 1 != n)
 			{
-				ss << separator;
+				stream << separator;
 			}
 		}
-
 	}
 
-	return ss.str();
+	return stream.str();
 }
 
-const std::vector<byte> zephyrus::string_to_bytes(const std::string & array_of_bytes)
+const std::vector<uint8_t> zephyrus::string_to_bytes(const std::string & array_of_bytes)
 {
-	std::vector<byte> data;
-	std::string array_data(array_of_bytes);
+	std::string aob(array_of_bytes);
+	std::vector<uint8_t> bytes;
 
-	array_data.erase(std::remove(array_data.begin(), array_data.end(), ' '), array_data.end());
-	if ((array_data.size() % 2) || !array_data.size())
+	aob.erase(std::remove(aob.begin(), aob.end(), ' '), aob.end());
+	if (aob.empty() || aob.size() % 2)
 	{
-		return data;
+		return bytes;
 	}
 
-	data.reserve(array_data.size() / 2);
+	bytes.reserve(aob.size() / 2);
 
 	std::mt19937 mt(static_cast<uint32_t>(std::chrono::system_clock::now().time_since_epoch().count()));
-	std::uniform_int_distribution<int32_t> dist(0, 15);
-	char hexadecimal_character[] = "0123456789ABCDEF";
+	std::uniform_int_distribution<int16_t> dist(0, 15);
+	std::stringstream stream;
 
-	for (size_t n = 0; n < array_data.size(); ++n)
+	for (auto it = aob.begin(); it != aob.end(); ++it)
 	{
-		if (!isxdigit(array_data.at(n)))
+		if (!isxdigit(*it))
 		{
-			array_data.at(n) = hexadecimal_character[dist(mt)];
+			stream << std::hex << std::setw(1) << dist(mt);
+		}
+		else
+		{
+			stream << std::hex << std::setw(1) << *it;
+		}
+
+		if (stream.str().size() == 2)
+		{
+			bytes.push_back(std::stoi(stream.str(), 0, 16));
+			stream.str("");
 		}
 	}
 
-	for (size_t i = 0; i < array_data.size(); i += 2)
-	{
-		std::stringstream ss;
-		ss << std::hex << array_data.at(i) << array_data.at(i + 1);
-		data.push_back(static_cast<uint8_t>(std::stoi(ss.str(), nullptr, 16)));
-	}
-
-	return data;
+	return bytes;
 }
 
 address_t zephyrus::getexportedfunctionaddress(const std::string & module_name, const std::string & function_name)

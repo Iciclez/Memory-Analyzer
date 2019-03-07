@@ -1,5 +1,4 @@
 #pragma once
-#include <windows.h>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -9,23 +8,16 @@
 
 #define X86 1
 
-typedef uint64_t qword;
-typedef DWORD dword;
-typedef WORD word;
-
-typedef void *handle;
-typedef void *lpvoid;
-
 #ifdef X86
-typedef dword address_t;
+typedef uint32_t address_t;
 #elif X64
-typedef qword address_t;
+typedef uint64_t address_t;
 #else
-typedef dword address_t;
+typedef uint32_t address_t;
 #endif
 
 
-enum hook_operation : word
+enum hook_operation : uint16_t
 {
 #ifdef X64
 	JMP = 0xE9
@@ -58,7 +50,7 @@ enum hook_operation : word
 class zephyrus
 {
 public:
-	enum padding_byte : byte
+	enum padding_byte : uint8_t
 	{
 		NOP = 0x90,
 		INT3 = 0xCC,
@@ -68,12 +60,12 @@ public:
 	~zephyrus() noexcept;
 
 	bool pagereadwriteaccess(address_t address);
-	dword protectvirtualmemory(address_t address, size_t size);
+	uint32_t protectvirtualmemory(address_t address, size_t size);
 
-	const std::vector<byte> readmemory(address_t address, size_t size);
+	const std::vector<uint8_t> readmemory(address_t address, size_t size);
 	bool writememory(address_t address, const std::string &array_of_bytes, size_t padding_size = 0, bool retain_bytes = true);
-	bool writememory(address_t address, const std::vector<byte> &bytes, bool retain_bytes = true);
-	bool copymemory(address_t address, lpvoid bytes, size_t size, bool retain_bytes = true);
+	bool writememory(address_t address, const std::vector<uint8_t> &bytes, bool retain_bytes = true);
+	bool copymemory(address_t address, void *bytes, size_t size, bool retain_bytes = true);
 	bool writeassembler(address_t address, const std::string &assembler_code, bool retain_bytes = true);
 	bool writepadding(address_t address, size_t padding_size);
 	bool revertmemory(address_t address);
@@ -83,7 +75,7 @@ public:
 	template <class T> bool redirect(T *address, T function, bool enable = true);
 	template <class T> bool redirect(hook_operation operation, T *address, T function, bool enable = true);
 
-	bool detour(lpvoid *from, lpvoid to, bool enable = true);
+	bool detour(void **from, void *to, bool enable = true);
 	template <class T> bool detour(T *from, T to, bool enable = true);
 
 	bool sethook(hook_operation operation, address_t address, address_t function, size_t nop_count = -1, bool retain_bytes = true);
@@ -102,27 +94,27 @@ public:
 	template <typename T> static const T readmultilevelpointer(address_t base, std::queue<size_t> offsets);
 
 	//
-	bool assemble(const std::string &assembler_code, _Out_ std::vector<byte> &bytecode);
+	bool assemble(const std::string &assembler_code, _Out_ std::vector<uint8_t> &bytecode);
 
 	size_t getnopcount(address_t address, hook_operation operation);
 	
-	static const std::string byte_to_string(const std::vector<byte> &bytes, const std::string &separator = " ");
-	static const std::vector<byte> string_to_bytes(const std::string &array_of_bytes);
+	static const std::string byte_to_string(const std::vector<uint8_t> &bytes, const std::string &separator = " ");
+	static const std::vector<uint8_t> string_to_bytes(const std::string &array_of_bytes);
 
-	template <typename T> static T convert_to(const std::vector<byte> &bytes);
+	template <typename T> static T convert_to(const std::vector<uint8_t> &bytes);
 
 	static address_t getexportedfunctionaddress(const std::string &module_name, const std::string &function_name);
 	template <typename T> static T getexportedfunction(const std::string &module_name, const std::string &function_name);
 
 private:
 	padding_byte padding;
-	std::unordered_map<address_t, std::vector<byte>> memoryedit;
+	std::unordered_map<address_t, std::vector<uint8_t>> memoryedit;
 
 	std::function<bool(address_t, size_t, const std::function<void(void)> &)> pageexecutereadwrite;
-	std::unordered_map<address_t, std::vector<byte>> hook_memory;
+	std::unordered_map<address_t, std::vector<uint8_t>> hook_memory;
 
 	std::unordered_map<address_t, address_t> trampoline_detour;
-	std::unordered_map<address_t, std::vector<byte>> trampoline_table;
+	std::unordered_map<address_t, std::vector<uint8_t>> trampoline_table;
 };
 
 template<class T>
@@ -140,7 +132,7 @@ inline bool zephyrus::redirect(hook_operation operation, T * address, T function
 template<class T>
 inline bool zephyrus::detour(T * from, T to, bool enable)
 {
-	return this->detour(reinterpret_cast<lpvoid*>(from), to, enable);
+	return this->detour(reinterpret_cast<void**>(from), to, enable);
 }
 
 template<hook_operation T>
@@ -173,7 +165,7 @@ inline bool zephyrus::writedata(address_t address, T data)
 template<typename T>
 inline const T zephyrus::readdata(address_t address)
 {
-	return ryumem::convert_to<T>(this->readmemory(address, sizeof(T)));
+	return zephyrus::convert_to<T>(this->readmemory(address, sizeof(T)));
 }
 
 template<typename T>
@@ -260,9 +252,9 @@ inline const T zephyrus::readmultilevelpointer(address_t base, std::queue<size_t
 }
 
 template<typename T>
-inline T zephyrus::convert_to(const std::vector<byte>& bytes)
+inline T zephyrus::convert_to(const std::vector<uint8_t>& bytes)
 {
-	std::vector<byte> b = bytes;
+	std::vector<uint8_t> b = bytes;
 
 	if (sizeof(T) > b.size())
 	{
