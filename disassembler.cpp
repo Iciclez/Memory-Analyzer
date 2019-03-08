@@ -110,6 +110,26 @@ std::string disassembler::get_instructions_string(const std::string & separator,
 	return result;
 }
 
+std::string disassembler::get_instructions_string(const std::vector<instruction> &instructions, const std::string & separator, const std::string &begin, const std::string &end)
+{
+	std::stringstream stream;
+
+	for (size_t n = 0; n < instructions.size(); ++n)
+	{
+		stream << begin << instructions.at(n).mnemonic << ' ' << instructions.at(n).op_str << end;
+
+		if (n + 1 != instructions.size())
+		{
+			stream << separator;
+		}
+	}
+
+	std::string result(stream.str());
+
+	std::transform(result.begin(), result.end(), result.begin(), toupper);
+
+	return result;
+}
 std::vector<uint8_t> disassembler::get_bytecode() const
 {
 	return this->bytecode;

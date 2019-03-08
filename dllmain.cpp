@@ -33,7 +33,6 @@ void dllmain::on_detach()
 	FreeConsole();
 }
 
-
 BOOL WINAPI DllMain(_In_ HINSTANCE hinstDLL, _In_ DWORD fdwReason, _In_ LPVOID lpvReserved)
 {
 	UNREFERENCED_PARAMETER(lpvReserved);

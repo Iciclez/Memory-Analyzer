@@ -6,6 +6,8 @@
 #include <vector>
 #include <unordered_map>
 
+#include "disassembler.hpp"
+
 class object
 {
 public:
@@ -29,9 +31,15 @@ public:
 	void api_hook_check();
 	void memory_patch_check();
 
-	void on_memory_patch(edit_type type, uint32_t address, size_t size, const std::vector<uint8_t> &from, const std::vector<uint8_t> &to);
+	void on_memory_patch(edit_type type, uint32_t address, size_t size, const std::vector<uint8_t> &from, const std::vector<uint8_t> &to, bool reconstruct = true);
 	void on_api_hook(void *from, void *to, const std::string &module_from, const std::string &module_to);
 
+protected:
+	std::vector<uint8_t> instruction_bytes(const std::vector<instruction> &opcodes);
+	std::vector<instruction> associated_instructions(uint32_t address, std::size_t size);
+	std::vector<uint8_t> associated_memory(uint32_t address, std::size_t size);
+	std::vector<instruction> associated_instructions(uint32_t address, const std::vector<uint8_t> &bytes);
+	std::vector<uint8_t> associated_memory(uint32_t address, const std::vector<uint8_t> &bytes);
 private:
 	IMAGE_NT_HEADERS *nt;
 
@@ -39,6 +47,7 @@ private:
 
 	std::vector<uint8_t> memory_instance;
 	std::unordered_map<uint32_t, std::vector<uint8_t>> memory_edit;
+	std::unordered_map<uint64_t, instruction> disasm_table;
 
 	std::unordered_map<void*, void*> api_hook;
 	std::unordered_map<void*, std::string> api_name;

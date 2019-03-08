@@ -8,7 +8,6 @@
 
 #include "detours.h"
 #include "zephyrus.hpp"
-#include "disassembler.hpp"
 #include "dllmain.hpp"
 
 object::object(HMODULE module_handle)
@@ -51,6 +50,12 @@ void object::initialize()
 	memory_instance.insert(memory_instance.end(),
 		reinterpret_cast<uint8_t*>(this->memory_start()),
 		reinterpret_cast<uint8_t*>(this->memory_end()));
+
+	std::vector<instruction> opcode = disassembler(this->memory_start(), z.readmemory(this->memory_start(), this->memory_size())).get_instructions();
+	for (const instruction &n : opcode)
+	{
+		disasm_table[n.address] = n;
+	}
 }
 
 void object::api_hook_check()
@@ -160,7 +165,7 @@ void object::memory_patch_check()
 	}
 }
 
-void object::on_memory_patch(edit_type type, uint32_t address, size_t size, const std::vector<uint8_t>& from, const std::vector<uint8_t>& to)
+void object::on_memory_patch(edit_type type, uint32_t address, size_t size, const std::vector<uint8_t>& from, const std::vector<uint8_t>& to, bool reconstruct)
 {
 	//function that provides information on the details of the memory edit
 
@@ -180,35 +185,71 @@ void object::on_memory_patch(edit_type type, uint32_t address, size_t size, cons
 		break;
 	}
 
-	disassembler from_disassembler(address, from);
-	disassembler to_disassembler(address, to);
-
-
-	string_stream << " - " << std::hex << std::setw(8) << std::setfill('0') << std::uppercase << address << '(' << std::dec << size << "): " <<
-		zephyrus::byte_to_string(from) << " to " << zephyrus::byte_to_string(to);
-	
-	if (from_disassembler.get_instructions().size() > 0 || to_disassembler.get_instructions().size() > 0)
+	if (reconstruct)
 	{
-		string_stream << "\n{\n" << from_disassembler.get_instructions_string("\n", "  ");
+		std::vector<instruction> opcodes_from = this->associated_instructions(address, from);
+		std::vector<instruction> opcodes_to = this->associated_instructions(address, to);
 
-		if (from_disassembler.get_instructions().size() > 0)
+		if (opcodes_from.empty() && opcodes_to.empty())
 		{
-			string_stream << '\n';
+			//fall-back, do not reconstruct this time
+			this->on_memory_patch(type, address, size, from, to, false);
 		}
-
-		string_stream << "->";
-
-		if (to_disassembler.get_instructions().size() > 0)
+		else
 		{
-			string_stream << '\n';
+			string_stream << " - " << std::hex << std::setw(8) << std::setfill('0') << std::uppercase << address << '(' << std::dec << size << "): " <<
+				zephyrus::byte_to_string(this->instruction_bytes(opcodes_from)) << " to " << zephyrus::byte_to_string(this->instruction_bytes(opcodes_to));
+		
+			string_stream << "\n{\n" << disassembler::get_instructions_string(opcodes_from, "\n", "  ");
+
+			if (opcodes_from.size() > 0)
+			{
+				string_stream << '\n';
+			}
+
+			string_stream << "->";
+
+			if (opcodes_to.size() > 0)
+			{
+				string_stream << '\n';
+			}
+
+			string_stream << disassembler::get_instructions_string(opcodes_to, "\n", "  ") << "\n}";
+
+			std::cout << string_stream.str() << '\n';
+			l.log("%s", string_stream.str().c_str());
 		}
-
-		string_stream << to_disassembler.get_instructions_string("\n", "  ") << "\n}";
-
 	}
+	else
+	{
+		string_stream << " - " << std::hex << std::setw(8) << std::setfill('0') << std::uppercase << address << '(' << std::dec << size << "): " <<
+			zephyrus::byte_to_string(from) << " to " << zephyrus::byte_to_string(to);
 
-	std::cout << string_stream.str() << '\n';
-	l.log("%s", string_stream.str().c_str());
+		disassembler from_disassembler(address, from);
+		disassembler to_disassembler(address, to);
+
+		if (from_disassembler.get_instructions().size() > 0 || to_disassembler.get_instructions().size() > 0)
+		{
+			string_stream << "\n{\n" << from_disassembler.get_instructions_string("\n", "  ");
+
+			if (from_disassembler.get_instructions().size() > 0)
+			{
+				string_stream << '\n';
+			}
+
+			string_stream << "->";
+
+			if (to_disassembler.get_instructions().size() > 0)
+			{
+				string_stream << '\n';
+			}
+
+			string_stream << to_disassembler.get_instructions_string("\n", "  ") << "\n}";
+		}
+
+		std::cout << string_stream.str() << '\n';
+		l.log("%s", string_stream.str().c_str());
+	}
 }
 
 void object::on_api_hook(void * from, void * to, const std::string & module_from, const std::string & module_to)
@@ -225,6 +266,153 @@ void object::on_api_hook(void * from, void * to, const std::string & module_from
 
 	std::cout << string_stream.str() << '\n';
 	l.log("%s", string_stream.str().c_str());
+}
+
+std::vector<uint8_t> object::instruction_bytes(const std::vector<instruction>& opcodes)
+{
+	std::vector<uint8_t> memory;
+
+	for (const instruction &n : opcodes)
+	{
+		memory.insert(memory.end(), n.bytes, n.bytes + n.size);
+	}
+
+	return memory;
+}
+
+std::vector<instruction> object::associated_instructions(uint32_t address, std::size_t size)
+{
+	std::vector<instruction> opcodes;
+	
+	if (address >= this->memory_start() && address <= this->memory_end())
+	{
+		if (disasm_table.count(address) == 1)
+		{
+			//forwards search
+			size_t current_address = address;
+			size_t current_size = 0;
+
+			while (current_size < size)
+			{
+				opcodes.push_back(disasm_table[current_address]);
+				current_size += disasm_table[current_address].size;
+				
+				//update current_address last
+				current_address += disasm_table[current_address].size;
+			}
+
+		}
+		else
+		{
+			uint32_t try_address = address;
+
+			while (disasm_table.count(try_address) == 0)
+			{
+				try_address -= 1;
+			}
+
+			if (try_address >= this->memory_start() && try_address <= this->memory_end())
+			{
+				return this->associated_instructions(try_address, address - try_address + size);
+			}
+		}
+	}
+
+	return opcodes;
+}
+
+std::vector<uint8_t> object::associated_memory(uint32_t address, std::size_t size)
+{
+	return this->instruction_bytes(this->associated_instructions(address, size));
+}
+
+std::vector<instruction> object::associated_instructions(uint32_t address, const std::vector<uint8_t>& bytes)
+{
+	if (address >= this->memory_start() && address <= this->memory_end())
+	{
+		if (disasm_table.count(address) == 1)
+		{
+			return disassembler(address, this->associated_memory(address, bytes)).get_instructions();
+		}
+		else
+		{
+			uint32_t try_address = address;
+
+			while (disasm_table.count(try_address) == 0)
+			{
+				try_address -= 1;
+			}
+
+			if (try_address >= this->memory_start() && try_address <= this->memory_end())
+			{
+				std::vector<uint8_t> associated_bytes;
+
+				associated_bytes.insert(associated_bytes.begin(),
+					memory_instance.begin() + (try_address - this->memory_start()),
+					memory_instance.begin() + (address - this->memory_start()));
+
+				associated_bytes.insert(associated_bytes.end(), bytes.begin(), bytes.end());
+
+				return this->associated_instructions(try_address, associated_bytes);
+			}
+		}
+	}
+
+	return std::vector<instruction>();
+}
+
+std::vector<uint8_t> object::associated_memory(uint32_t address, const std::vector<uint8_t>& bytes)
+{
+	std::vector<uint8_t> associated_bytes;
+
+	if (address >= this->memory_start() && address <= this->memory_end())
+	{
+		if (disasm_table.count(address) == 1)
+		{
+			//forwards search
+			associated_bytes.insert(associated_bytes.end(), bytes.begin(), bytes.end());
+
+			size_t current_address = address;
+			size_t current_size = 0;
+
+			while (current_size < bytes.size())
+			{
+				if (current_size + disasm_table[current_address].size > bytes.size())
+				{
+					associated_bytes.insert(associated_bytes.end(),
+						memory_instance.begin() + (address - this->memory_start()) + bytes.size(),
+						memory_instance.begin() + (current_address - this->memory_start()) + disasm_table[current_address].size);
+				}
+
+				current_size += disasm_table[current_address].size;
+
+				//update current_address last
+				current_address += disasm_table[current_address].size;
+			}
+		}
+		else
+		{
+			uint32_t try_address = address;
+
+			while (disasm_table.count(try_address) == 0)
+			{
+				try_address -= 1;
+			}
+
+			if (try_address >= this->memory_start() && try_address <= this->memory_end())
+			{
+				associated_bytes.insert(associated_bytes.begin(),
+					memory_instance.begin() + (try_address - this->memory_start()),
+					memory_instance.begin() + (address - this->memory_start()));
+
+				associated_bytes.insert(associated_bytes.end(), bytes.begin(), bytes.end());
+
+				return this->associated_memory(try_address, associated_bytes);
+			}
+		}
+	}
+	
+	return associated_bytes;
 }
 
 std::size_t object_hash::operator()(const object & memory_object) const
