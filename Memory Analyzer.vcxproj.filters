@@ -13,12 +13,6 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
-    <Filter Include="Header Files\zephyrus">
-      <UniqueIdentifier>{f64cb9f3-c740-4ec7-b26a-c17c74df5dcb}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Source Files\zephyrus">
-      <UniqueIdentifier>{a11bab68-5c08-4edf-a831-664209cde804}</UniqueIdentifier>
-    </Filter>
     <Filter Include="Header Files\memory_analyzer">
       <UniqueIdentifier>{11cfb9ed-7f1c-4b54-b29d-77e17f150498}</UniqueIdentifier>
     </Filter>
@@ -36,18 +30,6 @@
     <ClInclude Include="dllmain.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="zephyrus.hpp">
-      <Filter>Header Files\zephyrus</Filter>
-    </ClInclude>
-    <ClInclude Include="assembler.hpp">
-      <Filter>Header Files\zephyrus</Filter>
-    </ClInclude>
-    <ClInclude Include="disassembler.hpp">
-      <Filter>Header Files\zephyrus</Filter>
-    </ClInclude>
-    <ClInclude Include="aobscan.hpp">
-      <Filter>Header Files\zephyrus</Filter>
-    </ClInclude>
     <ClInclude Include="memory_analyzer.hpp">
       <Filter>Header Files\memory_analyzer</Filter>
     </ClInclude>
@@ -62,23 +44,11 @@
     <ClCompile Include="dllmain.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="aobscan.cpp">
-      <Filter>Source Files\zephyrus</Filter>
-    </ClCompile>
-    <ClCompile Include="assembler.cpp">
-      <Filter>Source Files\zephyrus</Filter>
-    </ClCompile>
-    <ClCompile Include="disassembler.cpp">
-      <Filter>Source Files\zephyrus</Filter>
-    </ClCompile>
     <ClCompile Include="memory_analyzer.cpp">
       <Filter>Source Files\memory_analyzer</Filter>
     </ClCompile>
     <ClCompile Include="object.cpp">
       <Filter>Source Files\memory_analyzer</Filter>
-    </ClCompile>
-    <ClCompile Include="zephyrus.cpp">
-      <Filter>Source Files\zephyrus</Filter>
     </ClCompile>
     <ClCompile Include="logger.cpp">
       <Filter>Source Files\util</Filter>
