@@ -7,7 +7,6 @@
 #include <iostream>
 
 #include "detours.h"
-#include "zephyrus.hpp"
 #include "dllmain.hpp"
 
 object::object(HMODULE module_handle)
@@ -51,7 +50,7 @@ void object::initialize()
 		reinterpret_cast<uint8_t*>(this->memory_start()),
 		reinterpret_cast<uint8_t*>(this->memory_end()));
 
-	std::vector<instruction> opcode = disassembler(this->memory_start(), z.readmemory(this->memory_start(), this->memory_size())).get_instructions();
+	std::vector<instruction> opcode = disassembler(this->memory_start(), disassembler::readmemory(this->memory_start(), this->memory_size())).get_instructions();
 	for (const instruction &n : opcode)
 	{
 		disasm_table[n.address] = n;
@@ -70,9 +69,9 @@ void object::api_hook_check()
 		object *object_pointer = reinterpret_cast<object*>(pContext);
 		object_pointer->api_name[pCode] = pszName;
 
-		if (*reinterpret_cast<uint8_t*>(pCode) == hook_operation::JMP)
+		if (*reinterpret_cast<uint8_t*>(pCode) == 0xe9)
 		{
-			disassembler memory(reinterpret_cast<address_t>(pCode), z.readmemory(reinterpret_cast<address_t>(pCode), 5));
+			disassembler memory(reinterpret_cast<uint64_t>(pCode), disassembler::readmemory(reinterpret_cast<uint64_t>(pCode), 5));
 			void *address_to = reinterpret_cast<void*>(memory.analyze_instruction(memory.get_instructions().at(0)).operand.at(0).imm);
 
 			if (pszName && object_pointer->api_hook.count(pCode) == 0 || object_pointer->api_hook.at(pCode) != address_to)
@@ -198,7 +197,7 @@ void object::on_memory_patch(edit_type type, uint32_t address, size_t size, cons
 		else
 		{
 			string_stream << " - " << std::hex << std::setw(8) << std::setfill('0') << std::uppercase << address << '(' << std::dec << size << "): " <<
-				zephyrus::byte_to_string(this->instruction_bytes(opcodes_from)) << " to " << zephyrus::byte_to_string(this->instruction_bytes(opcodes_to));
+				disassembler::byte_to_string(this->instruction_bytes(opcodes_from)) << " to " << disassembler::byte_to_string(this->instruction_bytes(opcodes_to));
 		
 			string_stream << "\n{\n" << disassembler::get_instructions_string(opcodes_from, "\n", "  ");
 
@@ -223,7 +222,7 @@ void object::on_memory_patch(edit_type type, uint32_t address, size_t size, cons
 	else
 	{
 		string_stream << " - " << std::hex << std::setw(8) << std::setfill('0') << std::uppercase << address << '(' << std::dec << size << "): " <<
-			zephyrus::byte_to_string(from) << " to " << zephyrus::byte_to_string(to);
+			disassembler::byte_to_string(from) << " to " << disassembler::byte_to_string(to);
 
 		disassembler from_disassembler(address, from);
 		disassembler to_disassembler(address, to);
