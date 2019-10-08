@@ -6,7 +6,7 @@
 #include <vector>
 #include <unordered_map>
 
-#include "disassembler.hpp"
+#include "zephyrus/disassembler.hpp"
 
 class object
 {
